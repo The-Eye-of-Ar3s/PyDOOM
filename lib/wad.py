@@ -2,7 +2,7 @@
 
 import json
 
-#import imageio
+import imageio
 import numpy as np
 
 from lib.exceptions import UnrecognizedWADFormat
@@ -96,12 +96,15 @@ class WAD:
         # patch_to_nparray test for EXIT1 patchlump
         #imageio.imwrite("Exit1.png",self.patch_to_nparray(self.wad["lump_data"][1824]["data"]))
 
-        # SAVE WAD AS JSON
-
+        # flat_to_nparray test for TLITE6_1 flatlump
+        #imageio.imwrite("Flat.png",self.flat_to_nparray(self.wad["lump_data"][2101]["data"]))
+        
         #if wad_type == "IWAD":
         #    self.iwad_handler()
         #elif wad_type == "PWAD":
         #    self.pwad_handler()
+
+        # SAVE WAD AS JSON
 
         with open(f"{path}.json", "wt", encoding="utf-8") as out:
             tempdir = self.wad
@@ -178,6 +181,7 @@ class WAD:
         # ??
         #topoffset = int.from_bytes(patchfile[2:4], "little", signed=True)
         # ??
+        # TODO: understand & utilize offsets
         columnofs = [
             int.from_bytes(patchfile[8+i*4:8+i*4+4], "little", signed=False) for i in range(width)
             ]
@@ -206,3 +210,29 @@ class WAD:
                 line.append(column[row_num])
             rimg.append(line)
         return np.array(rimg)
+
+    def flat_to_nparray(self, flatfile):
+        """flat_to_nparray
+        converts a flat lump to a np array image
+
+        Parameters
+        ----------
+        flatfile : 4096 byte lump
+            lump containing colormap indicies for a flat sprite
+
+        Returns
+        -------
+        np array
+            np array image
+        """
+        flatints = [i for i in flatfile]
+        i = 0
+        image = []
+        for _ in range(64):
+            l = []
+            for __ in range(64):
+                l.append(self.data["colormap"][0][flatints[i]])
+                i += 1
+            image.append(l)
+
+        return np.array(image)

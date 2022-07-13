@@ -1,1 +1,14 @@
 .venv
+.vscode
+
+*/__pycache__
+
+test.py
+test
+
+DOOM.WAD*
+DOOM2.WAD*
+PLUTONIA.WAD*
+
+IWAD.json
+PWAD.json

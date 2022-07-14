@@ -5,13 +5,16 @@ import json
 import imageio
 import numpy as np
 
-from lib.exceptions import UnrecognizedWADFormat
+from lib.exceptions import NotAnInternalWAD
 
 
 class WAD:
     """ Class for the DOOM WAD File
     """
-    def __init__(self, path):
+    # TODO: Implement Map Loading
+    # TODO: Implement Sound Loading
+    # TODO: Implement Demo Loading
+    def __init__(self, path, patchwads=None):
         print(f"LOADING {path}")
         with open(path, "rb") as raw_wad:
             self.raw = raw_wad.read()
@@ -20,8 +23,8 @@ class WAD:
 
         # LOAD HEADER
         wad_type = "".join([chr(i) for i in self.raw[0:4]])
-        if wad_type not in ["IWAD", "PWAD"]:
-            raise UnrecognizedWADFormat
+        if wad_type != "IWAD":
+            raise NotAnInternalWAD
         numlump = int.from_bytes(self.raw[4:8], "little", signed=True)
         directory_pointer = int.from_bytes(self.raw[8:12], "little", signed=True)
 
@@ -93,12 +96,12 @@ class WAD:
         #for index, value in enumerate(self.data["colormap"]):
         #    imageio.imwrite(f"img/colormap_{index}.png",np.array(value).reshape((16,16,3)))
 
-        # patch_to_nparray test for EXIT1 patchlump
-        #imageio.imwrite("Exit1.png",self.patch_to_nparray(self.wad["lump_data"][1824]["data"]))
+        # patch_to_nparray test for EXIT1 patchlump 1824 1710 1278
+        imageio.imwrite("1278.png",self.patch_to_nparray(self.wad["lump_data"][1278]["data"]))
 
         # flat_to_nparray test for TLITE6_1 flatlump
         #imageio.imwrite("Flat.png",self.flat_to_nparray(self.wad["lump_data"][2101]["data"]))
-        
+
         #if wad_type == "IWAD":
         #    self.iwad_handler()
         #elif wad_type == "PWAD":
@@ -122,7 +125,7 @@ class WAD:
                 playpal_raw = self.wad["lump_data"][i]["data"]
                 break
         playpal_ints = [np.uint8(i) for i in playpal_raw]
-        playpal_grouped = [playpal_ints[i:i+3] for i in range(0, len(playpal_ints), 3)]
+        playpal_grouped = [playpal_ints[i:i+3]+[255] for i in range(0, len(playpal_ints), 3)]
         pallets = [playpal_grouped[i:i+256] for i in range(0, len(playpal_grouped), 256)]
         self.data["playpal"] = pallets
 
@@ -149,9 +152,9 @@ class WAD:
     #    return (red, green, blue)
 
 
-    def patch_to_nparray(self, patchfile):
-        """patch_to_nparray
-            vert a DOOM Patchfile (DOOM Image format) into a python readable 2D_nparray
+    def patch_to_nparray_deprecated(self, patchfile):
+        """patch_to_nparray_deprecated
+        Convert a DOOM Patchfile (DOOM Image format) into a python readable 2D_nparray
 
         Parameters
         ----------
@@ -181,7 +184,6 @@ class WAD:
         # ??
         #topoffset = int.from_bytes(patchfile[2:4], "little", signed=True)
         # ??
-        # TODO: understand & utilize offsets
         columnofs = [
             int.from_bytes(patchfile[8+i*4:8+i*4+4], "little", signed=False) for i in range(width)
             ]
@@ -195,10 +197,8 @@ class WAD:
             length = int.from_bytes(
                 patchfile[column_pointer+1: column_pointer+2], "little", signed=False
                 )
-            data = [
-                self.data["colormap"][0][i]
-                for i in patchfile[column_pointer+3: column_pointer+length+3]
-                ]
+            data = [i for i in patchfile[column_pointer+3: column_pointer+length+3]]
+
             image.append(data)
             ind += 1
 
@@ -210,6 +210,56 @@ class WAD:
                 line.append(column[row_num])
             rimg.append(line)
         return np.array(rimg)
+
+    def patch_to_nparray(self, patchfile):
+        """patch_to_nparray
+        Convert a DOOM Patchfile (DOOM Image format) into a python readable 2D_nparray
+
+        Parameters
+        ----------
+        patchfile : bytestring
+            Patchfile WAD Lump
+        colormap : array[int]
+            Currently active colormap
+
+        Returns
+        -------
+        arr[arr[tuple()]]
+            nparray image
+        """
+        width = int.from_bytes(patchfile[0:2], "little", signed=False)
+        height = int.from_bytes(patchfile[2:4], "little", signed=False)
+        # I think these offsets are there to shift the origin of the picture
+        # TODO: understand & utilize offsets
+        #left = int.from_bytes(patchfile[0:2], "little", signed=True)
+        #top = int.from_bytes(patchfile[2:4], "little", signed=True)
+        print(width)
+        column_array = [
+            int.from_bytes(patchfile[8+i*4:8+i*4+4], "little", signed=False) for i in range(width)
+            ]
+
+        image = [[(0, 0, 0, 0) for _ in range(width)] for __ in range(height)]
+        for column_index in range(0, width-1):
+            # Column index is an index of column_array which then points to the actual column data
+            post_arr_raw = patchfile[column_array[column_index]:]
+            # Just cut off any data before the current column
+            rowstart = post_arr_raw[0]
+            # Row start is there to allow for transparent pixels by specifying where a "post" starts
+            while rowstart != 255:
+                pixel_count = post_arr_raw[1]
+                dummy_value = post_arr_raw[2]
+                for j in range(0, pixel_count):
+                    pixel = self.data["colormap"][0][post_arr_raw[3+j]]
+                    image[rowstart+j-1][column_index] = pixel
+                dummy_value = post_arr_raw[j+4]
+                post_arr_raw = post_arr_raw[j+5:]
+                rowstart = post_arr_raw[0]
+
+        image.insert(0, image.pop())
+        # First row shows up at the bottom no idea why and way too tired to fix
+        # TODO: Fix this
+        return np.array(image)
+
 
     def flat_to_nparray(self, flatfile):
         """flat_to_nparray
@@ -226,13 +276,13 @@ class WAD:
             np array image
         """
         flatints = [i for i in flatfile]
-        i = 0
+        index = 0
         image = []
         for _ in range(64):
-            l = []
+            line = []
             for __ in range(64):
-                l.append(self.data["colormap"][0][flatints[i]])
-                i += 1
-            image.append(l)
+                line.append(self.data["colormap"][0][flatints[index]])
+                index += 1
+            image.append(line)
 
         return np.array(image)
